@@ -28,5 +28,6 @@ barrier
 TAGS
 
 /.cache
+/compile_commands.json
 /compile_commands.events.json
 /fs.img.bk
