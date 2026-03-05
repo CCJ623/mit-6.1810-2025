@@ -1,9 +1,8 @@
 #include "kernel/fcntl.h"
 #include "kernel/fs.h"
+#include "kernel/param.h"
 #include "kernel/stat.h"
 #include "user/user.h"
-
-char default_directory[] = ".";
 
 typedef struct string {
   char *buffer;
@@ -36,7 +35,8 @@ char *string_find_last(const string *str, const char c) {
   return 0;
 }
 
-void find(string *path, const string *target) {
+void find(string *path, const string *target, char **exec_argv,
+          int exec_argv_size) {
   struct dirent de;
   struct stat st;
 
@@ -48,15 +48,31 @@ void find(string *path, const string *target) {
   switch (st.type) {
   case T_DEVICE:
     break;
-  case T_FILE:
-    //printf("[DEBUG] file:%s\n", path->buffer);
+  case T_FILE: { // printf("[DEBUG] file:%s\n", path->buffer);
+    char *file_name_ptr = string_find_last(path, '/') + 1;
+    if (strcmp(target->buffer, file_name_ptr) == 0) {
+      if (exec_argv_size == 0) {
+        printf("%s\n", path->buffer);
+      } else {
+        // exec_argv[exec_argv_size] = file_name_ptr;
+        exec_argv[exec_argv_size] = path->buffer;
+        ++exec_argv_size;
+        exec_argv[exec_argv_size] = 0;
 
-    if (strcmp(target->buffer, string_find_last(path, '/') + 1) == 0)
-      printf("%s\n", path->buffer);
+        int pid = fork();
+        if (pid == 0) {
+          exec(exec_argv[0], exec_argv);
+        } else if (pid < 0) {
+          fprintf(2, "fork error\n");
+        }
+        wait(0);
+      }
+    }
     break;
+  }
 
   case T_DIR: {
-    //printf("[DEBUG] directory:%s\n", path->buffer);
+    // printf("[DEBUG] directory:%s\n", path->buffer);
 
     int fd;
     string_append(path, "/");
@@ -72,7 +88,7 @@ void find(string *path, const string *target) {
       if (strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0)
         continue;
       int length = string_append(path, de.name);
-      find(path, target);
+      find(path, target, exec_argv, exec_argv_size);
       string_cut_tail(path, length);
     }
 
@@ -88,23 +104,34 @@ void find(string *path, const string *target) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc != 2 && argc != 3) {
+  if (argc < 3) {
     fprintf(2, "%s\n", "argument error");
     exit(1);
   }
 
   string target;
   string directory;
+  char *exec_argv[MAXARG];
+  int exec_argv_size = 0;
 
-  if (argc == 2) {
-    init_string(&directory, default_directory);
-    init_string(&target, argv[1]);
-  } else if (argc == 3) {
-    init_string(&directory, argv[1]);
-    init_string(&target, argv[2]);
+  if (argc > 3) {
+    if (strcmp(argv[3], "-exec") != 0) {
+      fprintf(2, "%s\n", "argument error");
+      exit(1);
+    }
+
+    for (int index = 0; argv[4 + index] != 0; ++index) {
+      exec_argv[index] = argv[4 + index];
+      ++exec_argv_size;
+    }
+
+    exec_argv[exec_argv_size] = 0;
   }
 
-  find(&directory, &target);
+  init_string(&directory, argv[1]);
+  init_string(&target, argv[2]);
+
+  find(&directory, &target, exec_argv, exec_argv_size);
 
   return 0;
 }
