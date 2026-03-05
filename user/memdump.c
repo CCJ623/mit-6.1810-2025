@@ -1,23 +1,21 @@
+#include "kernel/fcntl.h"
 #include "kernel/types.h"
 #include "user/user.h"
-#include "kernel/fcntl.h"
 
 void memdump(char *fmt, char *data);
 
-int
-main(int argc, char *argv[])
-{
-  if(argc == 1){
+int main(int argc, char *argv[]) {
+  if (argc == 1) {
     printf("Example 1:\n");
-    int a[2] = { 61810, 2025 };
-    memdump("ii", (char*) a);
-    
+    int a[2] = {61810, 2025};
+    memdump("ii", (char *)a);
+
     printf("Example 2:\n");
     memdump("S", "a string");
-    
+
     printf("Example 3:\n");
     char *s = "another";
-    memdump("s", (char *) &s);
+    memdump("s", (char *)&s);
 
     struct sss {
       char *ptr;
@@ -26,26 +24,26 @@ main(int argc, char *argv[])
       char byte;
       char bytes[8];
     } example;
-    
+
     example.ptr = "hello";
     example.num1 = 1819438967;
     example.num2 = 100;
     example.byte = 'z';
     strcpy(example.bytes, "xyzzy");
-    
+
     printf("Example 4:\n");
-    memdump("pihcS", (char*) &example);
-    
+    memdump("pihcS", (char *)&example);
+
     printf("Example 5:\n");
-    memdump("sccccc", (char*) &example);
-  } else if(argc == 2){
+    memdump("sccccc", (char *)&example);
+  } else if (argc == 2) {
     // format in argv[1], up to 512 bytes of data from standard input.
     char data[512];
     int n = 0;
     memset(data, '\0', sizeof(data));
-    while(n < sizeof(data)){
+    while (n < sizeof(data)) {
       int nn = read(0, data + n, sizeof(data) - n);
-      if(nn <= 0)
+      if (nn <= 0)
         break;
       n += nn;
     }
@@ -57,9 +55,54 @@ main(int argc, char *argv[])
   exit(0);
 }
 
-void
-memdump(char *fmt, char *data)
-{
+void memdump(char *fmt, char *data) {
   // Your code here.
-
+  char c = fmt[0];
+  for (int i = 0; c != '\0'; c = fmt[++i]) {
+    switch (c) {
+    case 'i': {
+      uint32 num;
+      memcpy(&num, data, 4);
+      data += 4;
+      printf("%d\n", num);
+      break;
+    }
+    case 'p': {
+      uint64 num;
+      memcpy(&num, data, 8);
+      data += 8;
+      printf("%x\n", (unsigned int)num);
+      break;
+    }
+    case 'h': {
+      uint16 num;
+      memcpy(&num, data, 2);
+      data += 2;
+      printf("%d\n", num);
+      break;
+    }
+    case 'c': {
+      char c;
+      memcpy(&c, data, 1);
+      data += 1;
+      printf("%c\n", c);
+      break;
+    }
+    case 's': {
+      char *string;
+      memcpy(&string, data, 8);
+      data += 8;
+      printf("%s\n", string);
+      break;
+    }
+    case 'S': {
+      printf("%s\n", data);
+      break;
+    }
+    default: {
+      write(2, &c, 1);
+      break;
+    }
+    }
+  }
 }
