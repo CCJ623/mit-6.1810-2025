@@ -1,0 +1,11 @@
+usertrap called syscall
+a7 = 0xf
+a7 represents system call number
+previous mode is user mode
+causing panic: lw	a3,0(zero)
+a3 corresponds to variable num
+null pointer dereference cause kernel crash
+address 0 is NOT mapped in the kernel address space
+scause = 0b1101 which indicates load page fault
+process(init) cause kernel paniced
+pid is 1
