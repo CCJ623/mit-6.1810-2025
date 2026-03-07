@@ -287,6 +287,8 @@ kfork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  np->interpose_mask = p->interpose_mask;
+
   pid = np->pid;
 
   release(&np->lock);
