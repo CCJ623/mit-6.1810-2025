@@ -1,10 +1,8 @@
-#include "types.h"
-#include "riscv.h"
 #include "defs.h"
-#include "param.h"
 #include "memlayout.h"
-#include "spinlock.h"
+#include "param.h"
 #include "proc.h"
+#include "types.h"
 #include "vm.h"
 
 uint64
@@ -107,9 +105,10 @@ sys_uptime(void)
 }
 
 int sys_interpose(void) {
-  int mask;
+  struct proc *p = myproc();
 
-  argint(0, &mask);
-  myproc()->interpose_mask = mask;
+  argint(0, &(p->interpose_mask));
+  argstr(1, p->interpose_allowed_pathname,
+         sizeof(p->interpose_allowed_pathname));
   return 0;
 }

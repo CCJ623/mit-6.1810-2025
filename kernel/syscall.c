@@ -1,11 +1,9 @@
-#include "types.h"
-#include "param.h"
-#include "memlayout.h"
-#include "riscv.h"
-#include "spinlock.h"
-#include "proc.h"
 #include "syscall.h"
 #include "defs.h"
+#include "memlayout.h"
+#include "param.h"
+#include "proc.h"
+#include "types.h"
 
 // Fetch the uint64 at addr from the current process.
 int
@@ -79,6 +77,9 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+// return nth bit of mask
+int is_set(int mask, int n) { return mask & (1 << n); }
+
 // Prototypes for the functions that handle system calls.
 extern uint64 sys_fork(void);
 extern uint64 sys_exit(void);
@@ -124,13 +125,26 @@ syscall(void)
 {
   int num;
   struct proc *p = myproc();
+  char buf[MAXPATH];
 
   num = p->trapframe->a7;
   if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    if (myproc()->interpose_mask & (1 << num)) {
-      printf("%d %s: sys call %d is rejected\n", p->pid, p->name, num);
-      p->trapframe->a0 = -1;
-      return;
+    // check if system call is interposed
+    if (is_set(p->interpose_mask, num)) {
+      // check if system call is open or exec
+      if (num == SYS_open || num == SYS_exec) {
+        argstr(0, buf, sizeof(buf));
+        printf("path name : %s\n", buf);
+        // check if path name is allowed
+        if (strncmp(p->interpose_allowed_pathname, buf, sizeof(buf)) != 0) {
+          p->trapframe->a0 = -1;
+          return;
+        }
+      } else {
+        printf("%d %s: sys call %d is rejected\n", p->pid, p->name, num);
+        p->trapframe->a0 = -1;
+        return;
+      }
     }
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
