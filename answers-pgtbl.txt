@@ -16,3 +16,6 @@
 uptime() can be faster using shared page. 
 Because kernel can write tick time to shared page, 
 process can read it without trapping into kernel.
+
+PTE in leaf page contains physical address and permission bits of real data.
+output of print_pgtbl() correspond to the PTE in leaf pages in vmprint().
