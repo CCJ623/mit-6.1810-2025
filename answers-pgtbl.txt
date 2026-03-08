@@ -1,0 +1,14 @@
+0x0000(va)(VRXUA) text
+0x1000(va)(VRXUA) text
+0x2000(va)(VRWU) data
+0x3000(va)(VRW) guard page
+0x4000(va)(VRWUAD) stack
+0x5000(va)(0x0)
+|
+0x9000(va)(0x0) heap(unused)
+
+0x3FFFFF6000(va)(0x0)
+|
+0x3FFFFFD000(va)(0x0) unused
+0x3FFFFFE000(va)(VRWAD) trapframe
+0x3FFFFFF000(va)(VRXA) trampoline

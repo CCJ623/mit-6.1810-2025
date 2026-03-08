@@ -30,3 +30,4 @@ TAGS
 /.cache
 /compile_commands.json
 /fs.img.bk
+/compile_commands.events.json
