@@ -80,3 +80,39 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+/*
+Get npages of continuous physical memory.
+*/
+void *getContinuousMemory(uint64 npages) { return 0; }
+
+void demoteSuperPage(void *pa) {
+  if (((uint64)pa % SUPERPGSIZE) != 0 || (char *)pa < end ||
+      (uint64)pa >= PHYSTOP)
+    panic("demoteSuperPage");
+}
+
+// Free the superpage of physical memory pointed at by pa,
+// which normally should have been returned by a
+// call to superalloc().  (The exception is when
+// initializing the allocator; see kinit above.)
+void superFree(void *pa) {
+  struct run *r;
+
+  if (((uint64)pa % SUPERPGSIZE) != 0 || (char *)pa < end ||
+      (uint64)pa >= PHYSTOP)
+    panic("superfree");
+
+  for (uint64 end = (uint64)pa + SUPERPGSIZE; (uint64)pa < end; pa += PGSIZE) {
+    kfree(pa);
+  }
+}
+
+// Allocate one 2M-byte page of physical memory.
+// Returns a pointer that the kernel can use.
+// Returns 0 if the memory cannot be allocated.
+void *superAlloc(void) {
+  void *address = getContinuousMemory(SUPERPGSIZE / PGSIZE);
+  memset(address, 5, SUPERPGSIZE);
+  return address;
+}
