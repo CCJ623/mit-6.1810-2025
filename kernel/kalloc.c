@@ -31,7 +31,7 @@ struct {
 
 inline uint64 getBuddySize(uint order) { return (uint64)PGSIZE << order; }
 
-inline uint64 getBuddy(uint64 address, uint order) {
+inline uint64 getBuddyAddress(uint64 address, uint order) {
   return address ^ getBuddySize(order);
 }
 
@@ -95,7 +95,7 @@ void buddySplit(uint order) {
   struct run *r = kmem.freelist[order];
   buddyRemove(r, kmem.freelist[order]);
   buddyAdd(r, kmem.freelist[order - 1]);
-  buddyAdd((struct run *)getBuddy((uint64)r, order - 1),
+  buddyAdd((struct run *)getBuddyAddress((uint64)r, order - 1),
            kmem.freelist[order - 1]);
 }
 
@@ -104,7 +104,7 @@ void buddyCoalesce(struct run *r, uint order) {
   buddyRemove(r, kmem.usedlist[order]);
   // search buddy at every order except max order
   while (order < BUDDY_MAX_ORDER - 1) {
-    struct run *buddy = (struct run *)getBuddy((uint64)r, order);
+    struct run *buddy = (struct run *)getBuddyAddress((uint64)r, order);
     if (buddyExist(buddy, kmem.freelist[order]) == 0)
       break;
     buddyRemove(buddy, kmem.freelist[order]);
@@ -114,6 +114,31 @@ void buddyCoalesce(struct run *r, uint order) {
     ++order;
   }
   buddyAdd(r, kmem.freelist[order]);
+}
+
+void buddyInit(void *start_address, void *end_address) {
+  acquire(&kmem.lock);
+
+  // deal with fragment page in front of space
+  for (start_address = (void *)PGROUNDUP((uint64)start_address);
+       (uint64)start_address % SUPERPGSIZE != 0;
+       start_address = (void *)((uint64)start_address + PGSIZE)) {
+    buddyAdd((struct run *)start_address, kmem.freelist[0]);
+  }
+
+  // add superpage to list
+  for (; ((uint64)start_address + SUPERPGSIZE) <= (uint64)end_address;
+       start_address = (void *)((uint64)start_address + SUPERPGSIZE)) {
+    buddyAdd((struct run *)start_address, kmem.freelist[BUDDY_MAX_ORDER - 1]);
+  }
+
+  // deal with fragment page in tail of space
+  for (; ((uint64)start_address + PGSIZE) <= (uint64)end_address;
+       start_address = (void *)((uint64)start_address + PGSIZE)) {
+    buddyAdd((struct run *)start_address, kmem.freelist[0]);
+  }
+
+  release(&kmem.lock);
 }
 
 void *buddyAlloc(uint npages) {
@@ -160,7 +185,8 @@ void buddyFree(void *pa) {
 
 void kinit() {
   initlock(&kmem.lock, "kmem");
-  freerange(end, (void *)PHYSTOP);
+  // freerange(end, (void *)PHYSTOP);
+  buddyInit(end, (void *)PHYSTOP);
 }
 
 void freerange(void *pa_start, void *pa_end) {
@@ -175,7 +201,7 @@ void freerange(void *pa_start, void *pa_end) {
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
 void kfree(void *pa) {
-  struct run *r;
+  // struct run *r;
 
   if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -183,12 +209,14 @@ void kfree(void *pa) {
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
-  r = (struct run *)pa;
+  // r = (struct run *)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  // acquire(&kmem.lock);
+  // r->next = kmem.freelist;
+  // kmem.freelist = r;
+  // release(&kmem.lock);
+
+  buddyFree(pa);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -197,21 +225,18 @@ void kfree(void *pa) {
 void *kalloc(void) {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if (r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  // acquire(&kmem.lock);
+  // r = kmem.freelist;
+  // if (r)
+  //   kmem.freelist = r->next;
+  // release(&kmem.lock);
+
+  r = buddyAlloc(1);
 
   if (r)
     memset((char *)r, 5, PGSIZE); // fill with junk
   return (void *)r;
 }
-
-/*
-Get npages of continuous physical memory.
-*/
-void *getContinuousMemory(uint64 npages) { return 0; }
 
 void demoteSuperPage(void *pa) {
   if (((uint64)pa % SUPERPGSIZE) != 0 || (char *)pa < end ||
@@ -230,16 +255,17 @@ void superFree(void *pa) {
       (uint64)pa >= PHYSTOP)
     panic("superfree");
 
-  for (uint64 end = (uint64)pa + SUPERPGSIZE; (uint64)pa < end; pa += PGSIZE) {
-    kfree(pa);
-  }
+  // Fill with junk to catch dangling refs.
+  memset(pa, 1, SUPERPGSIZE);
+
+  buddyFree(pa);
 }
 
 // Allocate one 2M-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
 void *superAlloc(void) {
-  void *address = getContinuousMemory(SUPERPGSIZE / PGSIZE);
+  void *address = buddyAlloc(SUPERPGSIZE / PGSIZE);
   memset(address, 5, SUPERPGSIZE);
   return address;
 }
