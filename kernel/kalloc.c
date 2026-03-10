@@ -169,7 +169,7 @@ void buddyInit(void *start_address, void *end_address) {
 
 void *buddyAlloc(uint npages) {
   static const uint mask = 1 << (sizeof(npages) * 8 - 1);
-  uint order = sizeof(npages) * 8;
+  uint order = sizeof(npages) * 8 - 1;
   // get min order to store npages
   while (1) {
     if (npages & mask)
@@ -191,8 +191,6 @@ void *buddyAlloc(uint npages) {
   buddyAdd(r, &kmem.usedlist[order]);
   release(&kmem.lock);
 
-  // fill with junk
-  memset((char *)r, 5, getBuddySize(order));
   return (void *)r;
 }
 
