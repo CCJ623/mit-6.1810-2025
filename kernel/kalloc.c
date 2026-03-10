@@ -52,12 +52,12 @@ inline uint64 getBuddyAddress(uint64 address, uint order) {
   return address ^ getBuddySize(order);
 }
 
-void buddyAdd(struct run *r, struct run *list) {
-  if (list == 0 || r < list) {
+void buddyAdd(struct run *r, struct run **list) {
+  if (*list == 0 || r < *list) {
     r->next = 0;
-    list = r;
+    *list = r;
   } else {
-    struct run *previous = list, *next = previous->next;
+    struct run *previous = *list, *next = previous->next;
     for (; next != 0 && next < r; previous = next, next = next->next)
       ;
     previous->next = r;
@@ -69,15 +69,15 @@ void buddyAdd(struct run *r, struct run *list) {
 remove r in list
 return 0 for no error
 */
-int buddyRemove(const struct run *r, struct run *list) {
-  if (list == 0)
+int buddyRemove(const struct run *r, struct run **list) {
+  if (*list == 0)
     return -1;
 
-  if (list == r) {
-    list = r->next;
+  if (*list == r) {
+    *list = r->next;
   }
 
-  struct run *previous = list, *next = previous->next;
+  struct run *previous = *list, *next = previous->next;
   while (1) {
     if (next == r) {
       previous->next = next->next;
@@ -110,27 +110,27 @@ void buddySplit(uint order) {
   }
 
   struct run *r = kmem.freelist[order];
-  buddyRemove(r, kmem.freelist[order]);
-  buddyAdd(r, kmem.freelist[order - 1]);
+  buddyRemove(r, &kmem.freelist[order]);
+  buddyAdd(r, &kmem.freelist[order - 1]);
   buddyAdd((struct run *)getBuddyAddress((uint64)r, order - 1),
-           kmem.freelist[order - 1]);
+           &kmem.freelist[order - 1]);
 }
 
 void buddyCoalesce(struct run *r, uint order) {
 
-  buddyRemove(r, kmem.usedlist[order]);
+  buddyRemove(r, &kmem.usedlist[order]);
   // search buddy at every order except max order
   while (order < BUDDY_MAX_ORDER - 1) {
     struct run *buddy = (struct run *)getBuddyAddress((uint64)r, order);
     if (buddyExist(buddy, kmem.freelist[order]) == 0)
       break;
-    buddyRemove(buddy, kmem.freelist[order]);
+    buddyRemove(buddy, &kmem.freelist[order]);
     // make sure r is the start address
     if (r > buddy)
       r = buddy;
     ++order;
   }
-  buddyAdd(r, kmem.freelist[order]);
+  buddyAdd(r, &kmem.freelist[order]);
 }
 
 void buddyInit(void *start_address, void *end_address) {
@@ -138,23 +138,28 @@ void buddyInit(void *start_address, void *end_address) {
 
   acquire(&kmem.lock);
 
+  for (uint order = 0; order < BUDDY_MAX_ORDER; ++order) {
+    kmem.freelist[order] = 0;
+    kmem.usedlist[order] = 0;
+  }
+
   // deal with fragment page in front of space
   for (start_address = (void *)PGROUNDUP((uint64)start_address);
        (uint64)start_address % SUPERPGSIZE != 0;
        start_address = (void *)((uint64)start_address + PGSIZE)) {
-    buddyAdd((struct run *)start_address, kmem.freelist[0]);
+    buddyAdd((struct run *)start_address, &kmem.freelist[0]);
   }
 
   // add superpage to list
   for (; ((uint64)start_address + SUPERPGSIZE) <= (uint64)end_address;
        start_address = (void *)((uint64)start_address + SUPERPGSIZE)) {
-    buddyAdd((struct run *)start_address, kmem.freelist[BUDDY_MAX_ORDER - 1]);
+    buddyAdd((struct run *)start_address, &kmem.freelist[BUDDY_MAX_ORDER - 1]);
   }
 
   // deal with fragment page in tail of space
   for (; ((uint64)start_address + PGSIZE) <= (uint64)end_address;
        start_address = (void *)((uint64)start_address + PGSIZE)) {
-    buddyAdd((struct run *)start_address, kmem.freelist[0]);
+    buddyAdd((struct run *)start_address, &kmem.freelist[0]);
   }
 
   release(&kmem.lock);
@@ -182,8 +187,8 @@ void *buddyAlloc(uint npages) {
   }
 
   struct run *r = kmem.freelist[order];
-  buddyRemove(r, kmem.freelist[order]);
-  buddyAdd(r, kmem.usedlist[order]);
+  buddyRemove(r, &kmem.freelist[order]);
+  buddyAdd(r, &kmem.usedlist[order]);
   release(&kmem.lock);
 
   // fill with junk
