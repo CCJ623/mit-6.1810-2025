@@ -29,6 +29,23 @@ struct {
   struct run *usedlist[BUDDY_MAX_ORDER];
 } kmem;
 
+void printList(struct run *list) {
+  for (; list != 0; list = list->next) {
+    printf("%p->", (void *)list);
+  }
+  printf("null\n");
+}
+
+void printBuddy() {
+  for (uint order = 0; order < BUDDY_MAX_ORDER; ++order) {
+    printf("[order:%d]\n", order);
+    printf("[freelist] ");
+    printList(kmem.freelist[order]);
+    printf("[usedlist] ");
+    printList(kmem.usedlist[order]);
+  }
+}
+
 inline uint64 getBuddySize(uint order) { return (uint64)PGSIZE << order; }
 
 inline uint64 getBuddyAddress(uint64 address, uint order) {
@@ -117,6 +134,8 @@ void buddyCoalesce(struct run *r, uint order) {
 }
 
 void buddyInit(void *start_address, void *end_address) {
+  printf("buddy init start\n");
+
   acquire(&kmem.lock);
 
   // deal with fragment page in front of space
@@ -139,6 +158,8 @@ void buddyInit(void *start_address, void *end_address) {
   }
 
   release(&kmem.lock);
+
+  printf("buddy init end\n");
 }
 
 void *buddyAlloc(uint npages) {
