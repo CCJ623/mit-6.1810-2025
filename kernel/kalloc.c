@@ -8,7 +8,6 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
-#include <cstddef>
 
 /*
 4k 8k 16k 32k 64k 128k 256k 512k 1m 2m
@@ -49,9 +48,13 @@ void buddyAdd(struct run *r, struct run *list) {
   }
 }
 
-void buddyRemove(const struct run *r, struct run *list) {
+/*
+remove r in list
+return 0 for no error
+*/
+int buddyRemove(const struct run *r, struct run *list) {
   if (list == 0)
-    return;
+    return -1;
 
   if (list == r) {
     list = r->next;
@@ -59,10 +62,12 @@ void buddyRemove(const struct run *r, struct run *list) {
 
   struct run *previous = list, *next = previous->next;
   while (1) {
-    if (next == r)
+    if (next == r) {
       previous->next = next->next;
-    else if (next == 0)
-      return;
+      return 0;
+    } else if (next == 0) {
+      return -1;
+    }
 
     previous = next;
     next = previous->next;
