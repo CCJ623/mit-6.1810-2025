@@ -26,12 +26,24 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist[BUDDY_MAX_ORDER];
-  struct run *usedlist[BUDDY_MAX_ORDER];
+
+  // store order of page, -1 for not used
+  uint8 order[(PHYSTOP - KERNBASE) / PGSIZE];
 } kmem;
 
 void printList(struct run *list) {
   for (; list != 0; list = list->next) {
     printf("%p->", (void *)list);
+  }
+  printf("null\n");
+}
+
+void printUsed(uint8 order) {
+  for (int i = 0; i < (sizeof(kmem.order) / sizeof(kmem.order[0])); ++i) {
+    if (kmem.order[i] == (uint8)-1)
+      continue;
+    if (kmem.order[i] == order)
+      printf("%p->", (void *)((uint64)i * PGSIZE + KERNBASE));
   }
   printf("null\n");
 }
@@ -42,8 +54,12 @@ void printBuddy() {
     printf("[freelist] ");
     printList(kmem.freelist[order]);
     printf("[usedlist] ");
-    printList(kmem.usedlist[order]);
+    printUsed(order);
   }
+}
+
+inline uint8 getOrder(void *pa) {
+  return kmem.order[(uint64)(pa - KERNBASE) / PGSIZE];
 }
 
 inline uint64 getBuddySize(uint order) { return (uint64)PGSIZE << order; }
@@ -63,6 +79,14 @@ void buddyAdd(struct run *r, struct run **list) {
     previous->next = r;
     r->next = next;
   }
+}
+
+int buddyAddUsed(void *pa, uint8 order) {
+  int index = (uint64)(pa - KERNBASE) / PGSIZE;
+  if (kmem.order[index] != (uint8)-1)
+    return -1;
+  kmem.order[index] = order;
+  return 0;
 }
 
 /*
@@ -91,6 +115,14 @@ int buddyRemove(const struct run *r, struct run **list) {
   }
 }
 
+int buddyRemoveUsed(void *pa) {
+  int index = (uint64)(pa - KERNBASE) / PGSIZE;
+  if (kmem.order[index] == (uint8)-1)
+    return -1;
+  kmem.order[index] = (uint8)-1;
+  return 0;
+}
+
 // if r exist in list return 1, otherwise 0
 int buddyExist(const struct run *r, const struct run *list) {
   while (list != 0) {
@@ -116,9 +148,13 @@ void buddySplit(uint order) {
            &kmem.freelist[order - 1]);
 }
 
-void buddyCoalesce(struct run *r, uint order) {
+void buddyCoalesce(struct run *r) {
 
-  buddyRemove(r, &kmem.usedlist[order]);
+  if (buddyRemoveUsed(r) != 0) {
+    printf("buddyCoalesce: %p not in used", r);
+    return;
+  }
+  uint8 order = getOrder(r);
   // search buddy at every order except max order
   while (order < BUDDY_MAX_ORDER - 1) {
     struct run *buddy = (struct run *)getBuddyAddress((uint64)r, order);
@@ -140,7 +176,7 @@ void buddyInit(void *start_address, void *end_address) {
 
   for (uint order = 0; order < BUDDY_MAX_ORDER; ++order) {
     kmem.freelist[order] = 0;
-    kmem.usedlist[order] = 0;
+    memset(&(kmem.order), -1, sizeof(kmem.order));
   }
 
   // deal with fragment page in front of space
@@ -188,7 +224,7 @@ void *buddyAlloc(uint npages) {
 
   struct run *r = kmem.freelist[order];
   buddyRemove(r, &kmem.freelist[order]);
-  buddyAdd(r, &kmem.usedlist[order]);
+  buddyAddUsed(r, order);
   release(&kmem.lock);
 
   return (void *)r;
@@ -197,12 +233,7 @@ void *buddyAlloc(uint npages) {
 void buddyFree(void *pa) {
   acquire(&kmem.lock);
 
-  for (uint order = 0; order < BUDDY_MAX_ORDER; ++order) {
-    if (buddyExist((struct run *)(pa), kmem.usedlist[order])) {
-      buddyCoalesce((struct run *)(pa), order);
-      break;
-    }
-  }
+  buddyCoalesce((struct run *)(pa));
 
   release(&kmem.lock);
 }
