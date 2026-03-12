@@ -229,8 +229,6 @@ void *buddyAlloc(uint npages) {
     order++;
   }
 
-  acquire(&kmem.lock);
-
   if (kmem.freelist[order] == 0x0) {
     buddySplit(order + 1);
     if (kmem.freelist[order] == 0x0)
@@ -249,18 +247,10 @@ void *buddyAlloc(uint npages) {
     panic("buddyAlloc");
   }
 
-  release(&kmem.lock);
-
   return (void *)r;
 }
 
-void buddyFree(void *pa) {
-  acquire(&kmem.lock);
-
-  buddyCoalesce((struct run *)(pa));
-
-  release(&kmem.lock);
-}
+void buddyFree(void *pa) { buddyCoalesce((struct run *)(pa)); }
 
 void kinit() {
   initlock(&kmem.lock, "kmem");
@@ -294,8 +284,9 @@ void kfree(void *pa) {
   // r->next = kmem.freelist;
   // kmem.freelist = r;
   // release(&kmem.lock);
-
+  acquire(&kmem.lock);
   buddyFree(pa);
+  release(&kmem.lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -309,8 +300,9 @@ void *kalloc(void) {
   // if (r)
   //   kmem.freelist = r->next;
   // release(&kmem.lock);
-
+  acquire(&kmem.lock);
   r = buddyAlloc(1);
+  release(&kmem.lock);
 
   if (r)
     memset((char *)r, 5, PGSIZE); // fill with junk
