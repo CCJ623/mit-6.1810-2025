@@ -381,14 +381,19 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += sz){
+    mem = 0;
     if (a % SUPERPGSIZE == 0 && newsz - a >= SUPERPGSIZE) {
+      // try to alloc super page
       sz = SUPERPGSIZE;
       mem = superAlloc();
-    } else {
+    }
+    if (mem == 0) {
+      // can not alloc super page
       sz = PGSIZE;
       mem = kalloc();
     }
     if(mem == 0){
+      // out of memory
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
