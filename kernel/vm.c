@@ -339,14 +339,16 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
 
     if (PTE_LEAF(*pte_l1)) {
-      // superpage
+      // super page
       if ((a % SUPERPGSIZE == 0) && (end - a >= SUPERPGSIZE)) {
+        // can free a whole super page
         if (do_free) {
           superFree((void *)PTE2PA(*pte_l1));
         }
         *pte_l1 = 0;
         a += SUPERPGSIZE;
       } else {
+        // need to free a normal page
         demoteSuperPage(PTE2PA(*pte_l1), 0);
         demoteSuperPageTable(pagetable, a);
         continue;
@@ -483,7 +485,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for (i = 0; i < sz;) {
     pte = superWalk(old, i, 0);
-    if ((*pte & PTE_V) == 0) {
+    if (pte == 0 || (*pte & PTE_V) == 0) {
       // level 1 pte unmapped
       i += SUPERPGSIZE;
       continue;
@@ -510,6 +512,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       pte = &l0_pt[PX(0, i)];
 
       if ((*pte & PTE_V) == 0) {
+        i += PGSIZE;
         continue;
       }
 
