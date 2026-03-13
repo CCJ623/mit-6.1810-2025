@@ -270,20 +270,12 @@ void freerange(void *pa_start, void *pa_end) {
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
 void kfree(void *pa) {
-  // struct run *r;
-
   if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
-  // r = (struct run *)pa;
-
-  // acquire(&kmem.lock);
-  // r->next = kmem.freelist;
-  // kmem.freelist = r;
-  // release(&kmem.lock);
   acquire(&kmem.lock);
   buddyFree(pa);
   release(&kmem.lock);
@@ -293,15 +285,8 @@ void kfree(void *pa) {
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
 void *kalloc(void) {
-  struct run *r;
-
-  // acquire(&kmem.lock);
-  // r = kmem.freelist;
-  // if (r)
-  //   kmem.freelist = r->next;
-  // release(&kmem.lock);
   acquire(&kmem.lock);
-  r = buddyAlloc(1);
+  struct run *r = buddyAlloc(1);
   release(&kmem.lock);
 
   if (r)
@@ -309,10 +294,24 @@ void *kalloc(void) {
   return (void *)r;
 }
 
-void demoteSuperPage(void *pa) {
+void demoteSuperPage(const uint64 pa, uint8 target_order) {
   if (((uint64)pa % SUPERPGSIZE) != 0 || (char *)pa < end ||
       (uint64)pa >= PHYSTOP)
     panic("demoteSuperPage");
+
+  acquire(&kmem.lock);
+
+  if (buddyRemoveUsed((void *)pa) != 0) {
+    printf("buddyCoalesce: %p not in used\n", (void *)pa);
+    panic("buddyCoalesce");
+  }
+
+  for (uint64 curr_pa = pa, end = pa + SUPERPGSIZE; curr_pa < end;
+       curr_pa += getBuddySize(target_order)) {
+    buddyAddUsed((void *)curr_pa, target_order);
+  }
+
+  release(&kmem.lock);
 }
 
 // Free the superpage of physical memory pointed at by pa,
@@ -336,7 +335,11 @@ void superFree(void *pa) {
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
 void *superAlloc(void) {
-  void *address = buddyAlloc(SUPERPGSIZE / PGSIZE);
-  memset(address, 5, SUPERPGSIZE);
-  return address;
+  acquire(&kmem.lock);
+  struct run *r = buddyAlloc(SUPERPGSIZE / PGSIZE);
+  release(&kmem.lock);
+
+  if (r)
+    memset((char *)r, 5, SUPERPGSIZE); // fill with junk
+  return (void *)r;
 }

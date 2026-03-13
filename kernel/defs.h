@@ -66,9 +66,12 @@ void            ireclaim(int);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+void superFree(void *pa);
+void *superAlloc(void);
+void demoteSuperPage(uint64 pa, uint8 target_order);
 
 // log.c
-void            initlog(int, struct superblock*);
+void initlog(int, struct superblock *);
 void            log_write(struct buf*);
 void            begin_op(void);
 void            end_op(void);
