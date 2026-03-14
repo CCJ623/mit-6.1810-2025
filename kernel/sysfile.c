@@ -511,10 +511,15 @@ uint64 sys_sigalarm(void) {
   argint(0, &ticks);
   argaddr(1, &handler);
 
-  process->ticks_to_call_handler = ticks;
+  process->alarm_interval = ticks;
   process->handler_function = handler;
 
   return 0;
 }
 
-uint64 sys_sigreturn(void) { return 0; }
+uint64 sys_sigreturn(void) {
+  struct proc *process = myproc();
+  memmove(process->trapframe, process->backup, sizeof(struct trapframe));
+  process->is_in_handler = 0;
+  return process->trapframe->a0;
+}
