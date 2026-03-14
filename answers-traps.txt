@@ -1,0 +1,18 @@
+a0,a1,a2 contains arguments to functions.
+a0 holds address of printf.
+a1 holds 12.
+a2 holds 13.
+
+No call to function f and function g in main.
+Compiler already calculated them to avoid calling.
+
+0x6f6 is the address the function printf located.
+
+Just after the jalr to printf in main, ra contains 0x34 which is the next instruction after jal in main.
+
+Output is: HE110 World
+If it is big-endian, I would set i to 0x726c6400.
+Do not need to change 57616, it is fine.
+
+It will print a random(garbage) value.
+
