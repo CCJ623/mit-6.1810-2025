@@ -25,6 +25,9 @@ char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
 
+int sigalarm(int ticks, void (*handler)());
+int sigreturn(void);
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);

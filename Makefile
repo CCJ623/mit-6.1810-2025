@@ -197,6 +197,7 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_test_endian\
+	$U/_alarmtest\
 
 
 

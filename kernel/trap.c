@@ -81,8 +81,15 @@ usertrap(void)
     kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if (which_dev == 2) {
     yield();
+    if (p->ticks_to_call_handler != 0)
+      ++(p->ticks_passed_since_last_call);
+    if (p->ticks_passed_since_last_call >= p->ticks_to_call_handler) {
+      p->trapframe->epc = p->handler_function;
+      p->ticks_passed_since_last_call = 0;
+    }
+  }
 
   prepare_return();
 

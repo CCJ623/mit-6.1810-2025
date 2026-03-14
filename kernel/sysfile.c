@@ -503,3 +503,18 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64 sys_sigalarm(void) {
+  int ticks;
+  uint64 handler;
+  struct proc *process = myproc();
+  argint(0, &ticks);
+  argaddr(1, &handler);
+
+  process->ticks_to_call_handler = ticks;
+  process->handler_function = handler;
+
+  return 0;
+}
+
+uint64 sys_sigreturn(void) { return 0; }

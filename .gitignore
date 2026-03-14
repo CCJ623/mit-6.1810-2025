@@ -31,3 +31,4 @@ TAGS
 /debug.gdb
 /fs.img.bk
 /.cache
+/compile_commands.events.json
