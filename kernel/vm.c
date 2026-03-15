@@ -306,7 +306,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       continue;   // physical page hasn't been allocated
 
-    if ((*pte & PTE_COW) == 0) {
+    if (!isCow(pte)) {
       // do something only if it is not a COW page
       if ((PTE_FLAGS(*pte) & PTE_W) == 0)
         setPteFlag(pte, PTE_READ_ONLY);
@@ -481,20 +481,24 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
       kfree((void *)mem);
       return 0;
     }
-  } else if (*pte & PTE_COW) {
+  } else if (isCow(pte)) {
     // COW page
-    mem = (uint64)kalloc();
-    if (mem == 0)
-      return 0;
     uint64 pa = PTE2PA(*pte);
     uint64 flags = PTE_FLAGS(*pte);
 
+    mem = (uint64)kalloc();
+    if (mem == 0)
+      return 0;
+
     memmove((void *)mem, (void *)pa, PGSIZE);
+    kfree((void *)pa);
     if ((flags & PTE_READ_ONLY) == 0) {
       setPteFlag(pte, PTE_W);
       clearPteFlag(pte, PTE_READ_ONLY);
     }
     clearPteFlag(pte, PTE_COW);
+
+    *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
   } else {
     return 0;
   }
@@ -513,4 +517,15 @@ ismapped(pagetable_t pagetable, uint64 va)
     return 1;
   }
   return 0;
+}
+
+int isCow(pte_t *pte) {
+  // uint64 pa = PTE2PA(*pte);
+  //  if (getReferenceCount((void *)pa) == 1) {
+  //    clearPteFlag(pte, PTE_COW);
+  //    if ((*pte & PTE_READ_ONLY) == 0)
+  //      setPteFlag(pte, PTE_W);
+  //  }
+
+  return (*pte) & PTE_COW;
 }
