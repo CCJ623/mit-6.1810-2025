@@ -17,6 +17,9 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+static inline void setPteFlag(pte_t *pte, uint64 flag) { *pte |= flag; }
+static inline void clearPteFlag(pte_t *pte, uint64 flag) { *pte &= (~flag); }
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)

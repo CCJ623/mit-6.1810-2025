@@ -381,6 +381,3 @@ typedef uint64 *pagetable_t; // 512 PTEs
 // Sv39, to avoid having to sign-extend virtual addresses
 // that have the high bit set.
 #define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
-
-inline void setPteFlag(pte_t *pte, uint64 flag) { *pte |= flag; }
-inline void clearPteFlag(pte_t *pte, uint64 flag) { *pte &= (~flag); }
