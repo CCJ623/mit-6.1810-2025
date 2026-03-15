@@ -489,21 +489,25 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   } else if (isCow(pte)) {
     // COW page
     uint64 pa = PTE2PA(*pte);
-    uint64 flags = PTE_FLAGS(*pte);
+    uint64 new_flags = PTE_FLAGS(*pte);
+    mem = pa;
 
-    mem = (uint64)kalloc();
-    if (mem == 0)
-      return 0;
-
-    memmove((void *)mem, (void *)pa, PGSIZE);
-    kfree((void *)pa);
-    if ((flags & PTE_READ_ONLY) == 0) {
-      setPteFlag(pte, PTE_W);
-      clearPteFlag(pte, PTE_READ_ONLY);
+    if ((new_flags & PTE_READ_ONLY) == 0) {
+      new_flags |= PTE_W;
+      new_flags &= ~PTE_READ_ONLY;
     }
-    clearPteFlag(pte, PTE_COW);
+    new_flags &= ~PTE_COW;
 
-    *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
+    if (getReferenceCount((void *)pa) > 1) {
+      // allocate new page only if it is a real COW page
+      mem = (uint64)kalloc();
+      if (mem == 0)
+        return 0;
+      memmove((void *)mem, (void *)pa, PGSIZE);
+      kfree((void *)pa);
+    }
+
+    *pte = PA2PTE(mem) | new_flags;
   } else {
     return 0;
   }
