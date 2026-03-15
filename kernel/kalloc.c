@@ -21,7 +21,10 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  uint64 reference_count[(PHYSTOP - KERNBASE) / PGSIZE];
 } kmem;
+
+inline uint64 getIndex(void *pa) { return ((uint64)pa - KERNBASE) / PGSIZE; }
 
 void
 kinit()
@@ -35,8 +38,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for (; p + PGSIZE <= (char *)pa_end; p += PGSIZE) {
+    kmem.reference_count[getIndex(p)] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -47,9 +52,23 @@ void
 kfree(void *pa)
 {
   struct run *r;
+  uint64 index = getIndex(pa);
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  acquire(&kmem.lock);
+  if (kmem.reference_count[index] <= 0)
+    panic("kfree: refcount <= 0");
+
+  --(kmem.reference_count[index]);
+
+  if (kmem.reference_count[index] > 0) {
+    // no need to free
+    release(&kmem.lock);
+    return;
+  }
+  release(&kmem.lock);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -72,11 +91,34 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if (r) {
     kmem.freelist = r->next;
+    kmem.reference_count[getIndex(r)] = 1;
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+void increaseReferenceCount(void *pa) {
+  uint64 index = getIndex(pa);
+  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
+    panic("increaseReference");
+
+  acquire(&kmem.lock);
+  if (kmem.reference_count[index] <= 0)
+    panic("krefincr: refcount <= 0");
+  kmem.reference_count[index]++;
+  release(&kmem.lock);
+}
+
+uint64 getReferenceCount(void *pa) {
+  uint64 index = getIndex(pa);
+  uint64 count;
+  acquire(&kmem.lock);
+  count = kmem.reference_count[index];
+  release(&kmem.lock);
+  return count;
 }
