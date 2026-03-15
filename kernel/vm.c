@@ -359,13 +359,18 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       return -1;
   
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0) {
+    if (pa0 == 0) {
       if((pa0 = vmfault(pagetable, va0, 0)) == 0) {
         return -1;
       }
     }
 
     pte = walk(pagetable, va0, 0);
+    if (!(*pte & PTE_V) || isCow(pte)) {
+      if ((pa0 = vmfault(pagetable, va0, 0)) == 0) {
+        return -1;
+      }
+    }
     // forbid copyout over read-only user text pages.
     if((*pte & PTE_W) == 0)
       return -1;
