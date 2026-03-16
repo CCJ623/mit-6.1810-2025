@@ -27,3 +27,8 @@ barrier
 *.pcap
 TAGS
 
+/kernel
+/.cache
+/compile_commands.json
+/debug.gdb
+/fs.img.bk
