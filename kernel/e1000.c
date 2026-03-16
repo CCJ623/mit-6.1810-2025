@@ -107,7 +107,7 @@ e1000_transmit(char *buf, int len)
   // so that the caller knows to free buf.
   //
 
-  printf("e1000_transmit: start\n");
+  // printf("e1000_transmit: start\n");
 
   acquire(&e1000_tx_lock);
 
@@ -127,7 +127,7 @@ e1000_transmit(char *buf, int len)
 
   release(&e1000_tx_lock);
 
-  printf("e1000_transmit: end\n");
+  // printf("e1000_transmit: end\n");
   return 0;
 }
 
@@ -141,7 +141,7 @@ e1000_recv(void)
   // Create and deliver a buf for each packet (using net_rx()).
   //
 
-  printf("e1000_recv: start\n");
+  // printf("e1000_recv: start\n");
 
   acquire(&e1000_rx_lock);
 
@@ -165,7 +165,7 @@ e1000_recv(void)
 
   release(&e1000_rx_lock);
 
-  printf("e1000_recv: end\n");
+  // printf("e1000_recv: end\n");
 }
 
 void

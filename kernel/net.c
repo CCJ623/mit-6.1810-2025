@@ -19,12 +19,28 @@ static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
 
-void
-netinit(void)
-{
-  initlock(&netlock, "netlock");
-}
+struct port {
+#define BUFFER_SIZE 16
+  uint8 *buffer[BUFFER_SIZE];
+  uint8 head;
+  uint8 tail;
+  uint8 is_used;
+  struct spinlock lock;
+};
 
+#define PORT_NUM_SIZE ((uint16) - 1)
+struct port port_array[PORT_NUM_SIZE];
+
+void netinit(void) {
+  initlock(&netlock, "netlock");
+  for (int i = 0; i != PORT_NUM_SIZE; ++i) {
+    struct port *port_ptr = &port_array[i];
+    port_ptr->head = 0;
+    port_ptr->tail = BUFFER_SIZE - 1;
+    port_ptr->is_used = 0;
+    initlock(&port_ptr->lock, "port");
+  }
+}
 
 //
 // bind(int port)
@@ -38,7 +54,26 @@ sys_bind(void)
   // Your code here.
   //
 
-  return -1;
+  int port_num;
+
+  argint(0, &port_num);
+
+  struct port *port_ptr = &port_array[port_num];
+
+  acquire(&port_ptr->lock);
+
+  if (port_ptr->is_used == 1) {
+    printf("bind: port(%d) is used\n", port_num);
+    release(&port_ptr->lock);
+    return -1;
+  }
+
+  port_ptr->head = 0;
+  port_ptr->tail = BUFFER_SIZE - 1;
+  port_ptr->is_used = 1;
+
+  release(&port_ptr->lock);
+  return 0;
 }
 
 //
@@ -53,6 +88,25 @@ sys_unbind(void)
   // Optional: Your code here.
   //
 
+  int port_num;
+
+  argint(0, &port_num);
+
+  struct port *port_ptr = &port_array[port_num];
+
+  acquire(&port_ptr->lock);
+
+  if (port_ptr->is_used == 0) {
+    printf("unbind: port(%d) is not used\n", port_num);
+    return -1;
+  }
+
+  for (int i = 0; i < BUFFER_SIZE; ++i) {
+    kfree(port_ptr->buffer[i]);
+  }
+  port_ptr->is_used = 0;
+
+  release(&port_ptr->lock);
   return 0;
 }
 
@@ -77,7 +131,74 @@ sys_recv(void)
   //
   // Your code here.
   //
-  return -1;
+  int destination_port;
+  uint64 source_ip;
+  uint64 source_port;
+  uint64 buffer;
+  int max_length;
+  struct proc *process = myproc();
+
+  argint(0, &destination_port);
+  argaddr(1, &source_ip);
+  argaddr(2, &source_port);
+  argaddr(3, &buffer);
+  argint(4, &max_length);
+
+  struct port *port_ptr = &port_array[destination_port];
+
+  acquire(&port_ptr->lock);
+
+  if (port_ptr->is_used == 0) {
+    printf("recv: port(%d) is not used\n", destination_port);
+    return -1;
+  }
+
+  while ((port_ptr->tail + 1) % BUFFER_SIZE == port_ptr->head) {
+    // printf("recv: waiting for port(%d)\n", destination_port);
+    sleep(&port_ptr->tail, &port_ptr->lock);
+  }
+
+  // printf("recv: port(%d) sucessfully wake up\n", destination_port);
+
+  uint64 next_tail = (port_ptr->tail + 1) % BUFFER_SIZE;
+  uint8 *data = port_ptr->buffer[next_tail];
+  struct ip *ip_header = (struct ip *)(data + sizeof(struct eth));
+  struct udp *udp_header = (struct udp *)(ip_header + 1);
+  uint8 *payload = (uint8 *)(udp_header + 1);
+
+  ip_header->ip_src = ntohl(ip_header->ip_src);
+  udp_header->sport = ntohs(udp_header->sport);
+  udp_header->ulen = ntohs(udp_header->ulen);
+
+  if (copyout(process->pagetable, (uint64)source_ip, (char *)&ip_header->ip_src,
+              4) == -1) {
+    printf("recv: error in copying source ip %d\n", ip_header->ip_src);
+    release(&port_ptr->lock);
+    return -1;
+  }
+  if (copyout(process->pagetable, (uint64)source_port,
+              (char *)&udp_header->sport, 2) == -1) {
+    printf("recv: error in copying source port %d\n", udp_header->sport);
+    release(&port_ptr->lock);
+    return -1;
+  }
+
+  uint64 copy_length = max_length;
+  if (copy_length > udp_header->ulen)
+    copy_length = udp_header->ulen - sizeof(struct udp);
+
+  if (copyout(process->pagetable, (uint64)buffer, (char *)payload,
+              copy_length) == -1) {
+    printf("recv: error in copying payload\n");
+    release(&port_ptr->lock);
+    return -1;
+  }
+
+  kfree(port_ptr->buffer[next_tail]);
+  port_ptr->tail = next_tail;
+
+  release(&port_ptr->lock);
+  return copy_length;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -191,7 +312,40 @@ ip_rx(char *buf, int len)
   //
   // Your code here.
   //
-  
+
+  struct ip *ip_header = (struct ip *)((struct eth *)buf + 1);
+  struct udp *udp_header = (struct udp *)(ip_header + 1);
+  uint16 destination_port = ntohs(udp_header->dport);
+
+  if (ip_header->ip_p != IPPROTO_UDP) {
+    printf("ip_rx: received a non udp packet\n");
+    kfree(buf);
+    return;
+  }
+
+  struct port *port_ptr = &port_array[destination_port];
+
+  acquire(&port_ptr->lock);
+
+  if (port_ptr->is_used == 0) {
+    printf("ip_rx: port(%d) is not listened\n", destination_port);
+    kfree(buf);
+    release(&port_ptr->lock);
+    return;
+  }
+
+  if (port_ptr->tail == (port_ptr->head + 1) % BUFFER_SIZE) {
+    printf("ip_rx: drop(full buffer)\n");
+    kfree(buf);
+    release(&port_ptr->lock);
+    return;
+  }
+
+  port_ptr->buffer[port_ptr->head] = (uint8 *)buf;
+  port_ptr->head = (port_ptr->head + 1) % BUFFER_SIZE;
+  wakeup(&port_ptr->tail);
+  // printf("ip_rx: try to wake up port(%d)\n", destination_port);
+  release(&port_ptr->lock);
 }
 
 //
