@@ -16,7 +16,8 @@ static struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
 
-struct spinlock e1000_lock;
+struct spinlock e1000_rx_lock;
+struct spinlock e1000_tx_lock;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -28,7 +29,8 @@ e1000_init(uint32 *xregs)
 {
   int i;
 
-  initlock(&e1000_lock, "e1000");
+  initlock(&e1000_rx_lock, "e1000_rx");
+  initlock(&e1000_tx_lock, "e1000_tx");
 
   regs = xregs;
 
@@ -105,7 +107,27 @@ e1000_transmit(char *buf, int len)
   // so that the caller knows to free buf.
   //
 
-  
+  printf("e1000_transmit: start\n");
+
+  acquire(&e1000_tx_lock);
+
+  struct tx_desc *descriptor = &tx_ring[regs[E1000_TDT]];
+  if ((descriptor->status & E1000_TXD_STAT_DD) == 0) {
+    release(&e1000_tx_lock);
+    return -1;
+  }
+
+  if (descriptor->addr != 0)
+    kfree((void *)descriptor->addr);
+
+  descriptor->addr = (uint64)buf;
+  descriptor->length = len;
+  descriptor->cmd |= E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+
+  release(&e1000_tx_lock);
+
+  printf("e1000_transmit: end\n");
   return 0;
 }
 
@@ -119,6 +141,31 @@ e1000_recv(void)
   // Create and deliver a buf for each packet (using net_rx()).
   //
 
+  printf("e1000_recv: start\n");
+
+  acquire(&e1000_rx_lock);
+
+  for (uint next_index = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+       next_index != regs[E1000_RDH]; regs[E1000_RDT] = next_index,
+            next_index = (regs[E1000_RDT] + 1) % RX_RING_SIZE) {
+    struct rx_desc *descriptor = &rx_ring[next_index];
+    if ((descriptor->status & E1000_RXD_STAT_DD) == 0) {
+      release(&e1000_rx_lock);
+      return;
+    }
+
+    net_rx((char *)descriptor->addr, descriptor->length);
+
+    if ((descriptor->addr = (uint64)kalloc()) == 0) {
+      panic("e1000_recv: out of memory");
+    }
+
+    descriptor->status = 0;
+  }
+
+  release(&e1000_rx_lock);
+
+  printf("e1000_recv: end\n");
 }
 
 void
