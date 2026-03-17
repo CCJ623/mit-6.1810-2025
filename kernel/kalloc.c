@@ -88,14 +88,26 @@ kalloc(void)
   // try self
   r = kmem[id].freelist;
   if (r) {
+    // self success
     kmem[id].freelist = r->next;
-  }
-  release(&kmem[id].lock);
-  // try others
-  for (int i = 0; r == 0 && i < NCPU; ++i) {
-    if (i == id)
-      continue;
-    r = steal(i);
+    release(&kmem[id].lock);
+  } else {
+    // try others
+    release(&kmem[id].lock);
+    struct run *tail = 0;
+    for (int i = 0; r == 0 && i < NCPU; ++i) {
+      if (i == id)
+        continue;
+      r = steal(i, &tail);
+    }
+
+    if (r && r != tail) {
+      // steal success
+      acquire(&kmem[id].lock);
+      tail->next = kmem[id].freelist;
+      kmem[id].freelist = r->next;
+      release(&kmem[id].lock);
+    }
   }
 
   pop_off();
@@ -107,15 +119,25 @@ kalloc(void)
   return (void *)r;
 }
 
-void *steal(int cpu_id) {
-  struct run *r = 0;
-  acquire(&kmem[cpu_id].lock);
+void *steal(int cpu_id, struct run **tail) {
+#define BATCH_SIZE 4
 
-  r = kmem[cpu_id].freelist;
-  if (r) {
-    kmem[cpu_id].freelist = r->next;
+  acquire(&kmem[cpu_id].lock);
+  struct run *head = kmem[cpu_id].freelist;
+
+  if (head == 0) {
+    release(&kmem[cpu_id].lock);
+    return 0;
   }
 
+  struct run *walk_tail = head;
+  for (int i = 1; i < BATCH_SIZE && walk_tail->next != 0; ++i) {
+    walk_tail = walk_tail->next;
+  }
+
+  kmem[cpu_id].freelist = walk_tail->next;
+  *tail = walk_tail;
+
   release(&kmem[cpu_id].lock);
-  return r;
+  return head;
 }

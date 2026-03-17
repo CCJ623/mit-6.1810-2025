@@ -66,10 +66,11 @@ void            ireclaim(int);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
-void *steal(int cpu_id);
+struct run;
+void *steal(int cpu_id, struct run **tail);
 
 // log.c
-void            initlog(int, struct superblock*);
+void initlog(int, struct superblock *);
 void            log_write(struct buf*);
 void            begin_op(void);
 void            end_op(void);
