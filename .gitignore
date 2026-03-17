@@ -31,3 +31,4 @@ TAGS
 /.cache
 /compile_commands.json
 /debug.gdb
+/compile_commands.events.json
