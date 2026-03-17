@@ -66,6 +66,7 @@ void            ireclaim(int);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+void *steal(int cpu_id);
 
 // log.c
 void            initlog(int, struct superblock*);
