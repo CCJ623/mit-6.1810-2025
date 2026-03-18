@@ -125,28 +125,52 @@ static void
 read_acquire_inner(struct rwspinlock *rwlk)
 {
   // Replace this with your implementation.
-  acquire(&rwlk->l);
+  while (1) {
+    acquire(&rwlk->lock);
+    if (rwlk->serving_counter == rwlk->ticket_counter) {
+      // no writer
+      ++rwlk->reader_count;
+      release(&rwlk->lock);
+      return;
+    }
+    release(&rwlk->lock);
+  }
 }
 
 static void
 read_release_inner(struct rwspinlock *rwlk)
 {
   // Replace this with your implementation.
-  release(&rwlk->l);
+  acquire(&rwlk->lock);
+  --rwlk->reader_count;
+  release(&rwlk->lock);
 }
 
 static void
 write_acquire_inner(struct rwspinlock *rwlk)
 {
   // Replace this with your implementation.
-  acquire(&rwlk->l);
+  acquire(&rwlk->lock);
+  uint64 ticket = rwlk->ticket_counter++;
+  release(&rwlk->lock);
+
+  while (1) {
+    acquire(&rwlk->lock);
+    if (rwlk->reader_count == 0 && rwlk->serving_counter == ticket) {
+      release(&rwlk->lock);
+      return;
+    }
+    release(&rwlk->lock);
+  }
 }
 
 static void
 write_release_inner(struct rwspinlock *rwlk)
 {
   // Replace this with your implementation.
-  release(&rwlk->l);
+  acquire(&rwlk->lock);
+  ++rwlk->serving_counter;
+  release(&rwlk->lock);
 }
 
 void
@@ -181,7 +205,10 @@ void
 initrwlock(struct rwspinlock *rwlk)
 {
   // Replace this with your implementation.
-  initlock(&rwlk->l, "rwlk");
+  initlock(&rwlk->lock, "rwlk");
+  rwlk->reader_count = 0;
+  rwlk->serving_counter = 0;
+  rwlk->ticket_counter = 0;
 }
 
 // Test rwspinlock implementation.
