@@ -499,16 +499,38 @@ itrunc(struct inode *ip)
     }
   }
 
-  if(ip->addrs[NDIRECT]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT]);
+  if (ip->addrs[INDIRECT_INDEX]) {
+    bp = bread(ip->dev, ip->addrs[INDIRECT_INDEX]);
     a = (uint*)bp->data;
     for(j = 0; j < NINDIRECT; j++){
       if(a[j])
         bfree(ip->dev, a[j]);
     }
     brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT]);
-    ip->addrs[NDIRECT] = 0;
+    bfree(ip->dev, ip->addrs[INDIRECT_INDEX]);
+    ip->addrs[INDIRECT_INDEX] = 0;
+  }
+
+  // free double indirect block
+  if (ip->addrs[DOUBLE_INDIRECT_INDEX]) {
+    bp = bread(ip->dev, ip->addrs[DOUBLE_INDIRECT_INDEX]);
+    a = (uint *)bp->data;
+    for (i = 0; i < NINDIRECT; ++i) {
+      if (a[i] == 0)
+        continue;
+      struct buf *level2_bp = bread(ip->dev, a[i]);
+      uint *level2_data = (uint *)level2_bp->data;
+      for (j = 0; j < NINDIRECT; ++j) {
+        if (level2_data[j] == 0)
+          continue;
+        bfree(ip->dev, level2_data[j]);
+      }
+      brelse(level2_bp);
+      bfree(ip->dev, a[i]);
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[DOUBLE_INDIRECT_INDEX]);
+    ip->addrs[DOUBLE_INDIRECT_INDEX] = 0;
   }
 
   ip->size = 0;
