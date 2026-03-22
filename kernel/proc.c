@@ -26,6 +26,31 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+int is_vma_free(const struct virtual_memory_area *vma) {
+  return vma->address_ == TRAPFRAME;
+}
+
+struct virtual_memory_area *find_free_vma() {
+  struct proc *process = myproc();
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    if (is_vma_free(&process->vma_array_[i])) {
+      return &process->vma_array_[i];
+    }
+  }
+  return 0;
+}
+
+void init_vma(struct virtual_memory_area *vma) {
+  vma->file_ = 0;
+  vma->address_ = TRAPFRAME;
+  vma->length_ = 0;
+  vma->offset_ = 0;
+  vma->flags_ = 0;
+  vma->protection_ = 0;
+}
+
+void free_vma(struct virtual_memory_area *vma) {}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -145,6 +170,12 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  // init mmap
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    init_vma(&p->vma_array_[i]);
+  }
+  p->mmap_start_address_ = TRAPFRAME;
 
   return p;
 }

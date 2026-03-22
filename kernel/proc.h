@@ -115,5 +115,7 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
+  // mmap
   struct virtual_memory_area vma_array_[VMA_ARRAY_SIZE];
+  uint64 mmap_start_address_;
 };

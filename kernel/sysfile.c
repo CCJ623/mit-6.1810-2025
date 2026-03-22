@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -504,6 +505,62 @@ sys_pipe(void)
   return 0;
 }
 
-uint64 sys_mmap(void) { return -1; }
+uint64 sys_mmap(void) {
+  void *addr;
+  size_t len;
+  int prot;
+  int flags;
+  int fd;
+  off_t offset;
+
+  argaddr(0, (uint64 *)&addr);
+  argint(1, (int *)&len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argint(4, &fd);
+  argint(5, (int *)&offset);
+
+  struct virtual_memory_area *vma = 0;
+  struct proc *process = myproc();
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    if (process->vma_array_[i].address_ == TRAPFRAME) {
+      vma = &process->vma_array_[i];
+      break;
+    }
+  }
+  if (vma == 0) {
+    return 0;
+  }
+
+  if (process->mmap_start_address_ - PGROUNDUP(len) < process->sz) {
+    return 0;
+  }
+
+  if (fd < 0 || fd >= NOFILE || process->ofile[fd] == 0) {
+    return 0;
+  }
+
+  vma->file_ = filedup(process->ofile[fd]);
+
+  if ((prot & PROT_READ) != 0 && (vma->file_->readable == 0)) {
+    return 0;
+  }
+
+  if ((prot & PROT_WRITE) != 0 && (vma->file_->writable == 0)) {
+    return 0;
+  }
+
+  vma->address_ = process->mmap_start_address_ - PGROUNDUP(len);
+  vma->length_ = len;
+  vma->protection_ = prot;
+  vma->flags_ = flags;
+  vma->offset_ = offset;
+
+  if (vma->address_ < process->mmap_start_address_) {
+    process->mmap_start_address_ = vma->address_;
+  }
+
+  return vma->address_;
+}
 
 uint64 sys_munmap(void) { return -1; }
