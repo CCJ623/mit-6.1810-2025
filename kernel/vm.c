@@ -7,6 +7,9 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -454,8 +457,17 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 {
   uint64 mem;
   struct proc *p = myproc();
+  struct virtual_memory_area *vma = 0;
 
-  if (va >= p->sz)
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    if (p->vma_array_[i].address_ <= va &&
+        va < p->vma_array_[i].address_ + p->vma_array_[i].length_) {
+      vma = &p->vma_array_[i];
+      break;
+    }
+  }
+
+  if (vma == 0 && va >= p->sz)
     return 0;
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
@@ -464,8 +476,46 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   mem = (uint64) kalloc();
   if(mem == 0)
     return 0;
-  memset((void *) mem, 0, PGSIZE);
-  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
+  if (vma) {
+    // read file
+    struct inode *inode = vma->file_->ip;
+    uint want_bytes = (vma->address_ + vma->length_ - va);
+    if (want_bytes > PGSIZE) {
+      want_bytes = PGSIZE;
+    }
+    ilock(inode);
+    int read_bytes =
+        readi(inode, 0, mem, vma->offset_ + (va - vma->address_), want_bytes);
+    iunlock(inode);
+
+    if (read_bytes == -1) {
+      kfree((void *)mem);
+      return 0;
+    }
+
+    // clear tail
+    memset((void *)mem + read_bytes, 0, PGSIZE - read_bytes);
+
+  } else {
+    memset((void *)mem, 0, PGSIZE);
+  }
+
+  int permission = 0;
+  if (vma) {
+    if (vma->protection_ & PROT_READ) {
+      permission |= PTE_R;
+    }
+    if (vma->protection_ & PROT_WRITE) {
+      permission |= PTE_W;
+    }
+    if (vma->protection_ & PROT_EXEC) {
+      permission |= PTE_X;
+    }
+    permission |= PTE_U;
+  } else {
+    permission |= PTE_W | PTE_U | PTE_R;
+  }
+  if (mappages(p->pagetable, va, PGSIZE, mem, permission) != 0) {
     kfree((void *)mem);
     return 0;
   }
