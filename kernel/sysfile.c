@@ -563,4 +563,73 @@ uint64 sys_mmap(void) {
   return vma->address_;
 }
 
-uint64 sys_munmap(void) { return -1; }
+uint64 sys_munmap(void) {
+  uint64 addr;
+  size_t len;
+
+  argaddr(0, &addr);
+  argint(1, (int *)&len);
+
+  struct proc *process = myproc();
+  struct virtual_memory_area *vma = 0;
+
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    if (process->vma_array_[i].address_ == TRAPFRAME) {
+      continue;
+    }
+    struct virtual_memory_area *temp_vma = &process->vma_array_[i];
+    if (temp_vma->address_ <= addr &&
+        addr + len <= temp_vma->address_ + temp_vma->length_) {
+      vma = temp_vma;
+      break;
+    }
+  }
+  if (vma == 0) {
+    return -1;
+  }
+
+  if (vma->flags_ & MAP_SHARED) {
+    // write dirty mmap page to file
+    uint64 address = vma->address_;
+    uint64 end = vma->address_ + vma->length_;
+    pte_t *pte;
+    struct inode *node = vma->file_->ip;
+    uint64 physical_address;
+    for (; address < PGROUNDDOWN(end); address += PGSIZE) {
+      pte = walk(process->pagetable, address, 0);
+      if (pte == 0 || !(*pte & PTE_D))
+        continue;
+
+      physical_address = PTE2PA(*pte);
+      begin_op();
+      ilock(node);
+      writei(node, 0, physical_address,
+             vma->offset_ + (address - vma->address_), PGSIZE);
+      iunlock(node);
+      end_op();
+    }
+
+    if (address != end) {
+      // write last piece of mmap (when end is not page aligned)
+      pte = walk(process->pagetable, address, 0);
+      if (pte == 0 || !(*pte & PTE_D)) {
+        // nothing to do
+      } else {
+        physical_address = PTE2PA(*pte);
+        begin_op();
+        ilock(node);
+        writei(node, 0, physical_address,
+               vma->offset_ + (address - vma->address_), end - address);
+        iunlock(node);
+        end_op();
+      }
+    }
+  }
+
+  uvmunmap(process->pagetable, vma->address_, PGROUNDUP(vma->length_) / PGSIZE,
+           1);
+  fileclose(vma->file_);
+  init_vma(vma);
+
+  return 0;
+}

@@ -15,6 +15,9 @@ struct superblock;
 #ifdef LAB_LOCK
 struct rwspinlock;
 #endif
+#ifdef LAB_MMAP
+struct virtual_memory_area;
+#endif
 
 // bio.c
 void            binit(void);
@@ -108,6 +111,8 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+int is_vma_free(const struct virtual_memory_area *vma);
+void init_vma(struct virtual_memory_area *vma);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
