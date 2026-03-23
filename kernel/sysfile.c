@@ -523,7 +523,7 @@ uint64 sys_mmap(void) {
   struct virtual_memory_area *vma = 0;
   struct proc *process = myproc();
   for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
-    if (process->vma_array_[i].address_ == TRAPFRAME) {
+    if (is_vma_free(&process->vma_array_[i])) {
       vma = &process->vma_array_[i];
       break;
     }
@@ -531,6 +531,9 @@ uint64 sys_mmap(void) {
   if (vma == 0) {
     return -1;
   }
+
+  vma->protection_ = prot;
+  vma->flags_ = flags;
 
   if (process->mmap_start_address_ - PGROUNDUP(len) < process->sz) {
     return -1;
@@ -575,7 +578,7 @@ uint64 sys_munmap(void) {
   struct virtual_memory_area *vma = 0;
 
   for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
-    if (process->vma_array_[i].address_ == TRAPFRAME) {
+    if (is_vma_free(&process->vma_array_[i])) {
       continue;
     }
     struct virtual_memory_area *temp_vma = &process->vma_array_[i];
@@ -593,10 +596,11 @@ uint64 sys_munmap(void) {
       (vma->file_->writable)) {
     // write dirty mmap page to file
     uint64 address = vma->address_;
-    uint64 end = vma->address_ + vma->length_;
     pte_t *pte;
-    struct inode *node = vma->file_->ip;
     uint64 physical_address;
+    struct inode *node = vma->file_->ip;
+    uint64 end =
+        vma->address_ + (vma->length_ > node->size ? node->size : vma->length_);
     for (; address < PGROUNDDOWN(end); address += PGSIZE) {
       pte = walk(process->pagetable, address, 0);
       if (pte == 0 || !(*pte & PTE_D))
