@@ -602,8 +602,8 @@ uint64 sys_munmap(void) {
     uint64 end = address + len;
     if (end > vma->address_ + vma->length_)
       end = vma->address_ + vma->length_;
-    if (end > vma->address_ + vma->file_->ip->size)
-      end = vma->address_ + vma->file_->ip->size;
+    if (end > vma->address_ + (vma->file_->ip->size - vma->offset_))
+      end = vma->address_ + (vma->file_->ip->size - vma->offset_);
     for (; address < PGROUNDDOWN(end); address += PGSIZE) {
       pte = walk(process->pagetable, address, 0);
       if (pte == 0 || !(*pte & PTE_D))

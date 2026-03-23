@@ -62,8 +62,8 @@ void free_vma(pagetable_t pagetable, struct virtual_memory_area *vma) {
     uint64 physical_address;
     struct inode *node = vma->file_->ip;
     uint64 end = address + vma->length_;
-    if (end > vma->address_ + vma->file_->ip->size)
-      end = vma->address_ + vma->file_->ip->size;
+    if (end > vma->address_ + (vma->file_->ip->size - vma->offset_))
+      end = vma->address_ + (vma->file_->ip->size - vma->offset_);
     for (; address < PGROUNDDOWN(end); address += PGSIZE) {
       pte = walk(pagetable, address, 0);
       if (pte == 0 || !(*pte & PTE_D))
