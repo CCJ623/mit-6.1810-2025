@@ -469,10 +469,10 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
         break;
       }
     }
+    if (vma == 0)
+      return 0;
   }
 
-  if (vma == 0)
-    return 0;
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
     return 0;
