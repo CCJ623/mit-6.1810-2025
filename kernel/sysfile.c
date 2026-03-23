@@ -507,7 +507,7 @@ sys_pipe(void)
 
 uint64 sys_mmap(void) {
   void *addr;
-  size_t len;
+  size_t len = 0;
   int prot;
   int flags;
   int fd;
@@ -529,25 +529,26 @@ uint64 sys_mmap(void) {
     }
   }
   if (vma == 0) {
-    return 0;
+    return -1;
   }
 
   if (process->mmap_start_address_ - PGROUNDUP(len) < process->sz) {
-    return 0;
+    return -1;
   }
 
   if (fd < 0 || fd >= NOFILE || process->ofile[fd] == 0) {
-    return 0;
+    return -1;
   }
 
   vma->file_ = filedup(process->ofile[fd]);
 
   if ((prot & PROT_READ) != 0 && (vma->file_->readable == 0)) {
-    return 0;
+    return -1;
   }
 
-  if ((prot & PROT_WRITE) != 0 && (vma->file_->writable == 0)) {
-    return 0;
+  if ((prot & PROT_WRITE) != 0 && (vma->file_->writable == 0) &&
+      (vma->flags_ & MAP_SHARED)) {
+    return -1;
   }
 
   vma->address_ = process->mmap_start_address_ - PGROUNDUP(len);
@@ -588,7 +589,8 @@ uint64 sys_munmap(void) {
     return -1;
   }
 
-  if (vma->flags_ & MAP_SHARED) {
+  if ((vma->flags_ & MAP_SHARED) && (vma->protection_ & PROT_WRITE) &&
+      (vma->file_->writable)) {
     // write dirty mmap page to file
     uint64 address = vma->address_;
     uint64 end = vma->address_ + vma->length_;
