@@ -595,11 +595,15 @@ uint64 sys_munmap(void) {
   if ((vma->flags_ & MAP_SHARED) && (vma->protection_ & PROT_WRITE) &&
       (vma->file_->writable) && (vma->offset_ < vma->file_->ip->size)) {
     // write dirty mmap page to file
-    uint64 address = vma->address_;
+    uint64 address = PGROUNDDOWN(addr);
     pte_t *pte;
     uint64 physical_address;
     struct inode *node = vma->file_->ip;
-    uint64 end = vma->address_ + (len > node->size ? node->size : len);
+    uint64 end = address + len;
+    if (end > vma->address_ + vma->length_)
+      end = vma->address_ + vma->length_;
+    if (end > vma->address_ + vma->file_->ip->size)
+      end = vma->address_ + vma->file_->ip->size;
     for (; address < PGROUNDDOWN(end); address += PGSIZE) {
       pte = walk(process->pagetable, address, 0);
       if (pte == 0 || !(*pte & PTE_D))
@@ -631,12 +635,16 @@ uint64 sys_munmap(void) {
     }
   }
 
-  uvmunmap(process->pagetable, vma->address_, PGROUNDUP(len) / PGSIZE, 1);
+  uvmunmap(process->pagetable, PGROUNDDOWN(addr), PGROUNDUP(len) / PGSIZE, 1);
 
   if (PGROUNDUP(len) < PGROUNDUP(vma->length_)) {
     // partial unmap
-    vma->address_ += PGROUNDUP(len);
-    vma->offset_ += PGROUNDUP(len);
+    if (vma->address_ == addr) {
+      vma->address_ += PGROUNDUP(len);
+      vma->offset_ += PGROUNDUP(len);
+    }
+    vma->length_ -= len;
+
   } else {
     // whole
     fileclose(vma->file_);

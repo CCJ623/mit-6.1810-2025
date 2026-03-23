@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -49,7 +53,52 @@ void init_vma(struct virtual_memory_area *vma) {
   vma->protection_ = 0;
 }
 
-void free_vma(struct virtual_memory_area *vma) {}
+void free_vma(pagetable_t pagetable, struct virtual_memory_area *vma) {
+  if ((vma->flags_ & MAP_SHARED) && (vma->protection_ & PROT_WRITE) &&
+      (vma->file_->writable) && (vma->offset_ < vma->file_->ip->size)) {
+    // write dirty mmap page to file
+    uint64 address = PGROUNDDOWN(vma->address_);
+    pte_t *pte;
+    uint64 physical_address;
+    struct inode *node = vma->file_->ip;
+    uint64 end = address + vma->length_;
+    if (end > vma->address_ + vma->file_->ip->size)
+      end = vma->address_ + vma->file_->ip->size;
+    for (; address < PGROUNDDOWN(end); address += PGSIZE) {
+      pte = walk(pagetable, address, 0);
+      if (pte == 0 || !(*pte & PTE_D))
+        continue;
+
+      physical_address = PTE2PA(*pte);
+      begin_op();
+      ilock(node);
+      writei(node, 0, physical_address,
+             vma->offset_ + (address - vma->address_), PGSIZE);
+      iunlock(node);
+      end_op();
+    }
+
+    if (address < end) {
+      // write last piece of mmap (when end is not page aligned)
+      pte = walk(pagetable, address, 0);
+      if (pte == 0 || !(*pte & PTE_D)) {
+        // nothing to do
+      } else {
+        physical_address = PTE2PA(*pte);
+        begin_op();
+        ilock(node);
+        writei(node, 0, physical_address,
+               vma->offset_ + (address - vma->address_), end - address);
+        iunlock(node);
+        end_op();
+      }
+    }
+  }
+
+  uvmunmap(pagetable, vma->address_, PGROUNDUP(vma->length_) / PGSIZE, 1);
+  fileclose(vma->file_);
+  init_vma(vma);
+}
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -330,6 +379,46 @@ kfork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    struct virtual_memory_area *parent_vma = &(p->vma_array_[i]);
+    if (is_vma_free(parent_vma))
+      continue;
+    struct virtual_memory_area *child_vma = &(np->vma_array_[i]);
+
+    child_vma->address_ = parent_vma->address_;
+    child_vma->length_ = parent_vma->length_;
+    child_vma->offset_ = parent_vma->offset_;
+    child_vma->flags_ = parent_vma->flags_;
+    child_vma->protection_ = parent_vma->protection_;
+    child_vma->file_ = filedup(parent_vma->file_);
+
+    // if (parent_vma->flags_ & MAP_SHARED) {
+    //   // share physical memory
+    //   for (uint64 address = parent_vma->address_,
+    //               end = PGROUNDUP(parent_vma->address_ +
+    //               parent_vma->length_);
+    //        address < end; address += PGSIZE) {
+    //     pte_t *pte = walk(p->pagetable, address, 0);
+    //     if (mappages(np->pagetable, address, PGSIZE, PTE2PA(*pte),
+    //                  PTE_FLAGS(*pte)) != 0) {
+    //       return -1;
+    //     }
+    //   }
+    // } else {
+    //   // alloc new memory for child
+    //   for (uint64 address = parent_vma->address_,
+    //               end = PGROUNDUP(parent_vma->address_ +
+    //               parent_vma->length_);
+    //        address < end; address += PGSIZE) {
+    //     pte_t *parent_pte = walk(p->pagetable, address, 0);
+    //     pte_t *child_pte = walk(np->pagetable, address, 1);
+    //     if (mappages(np->pagetable, address, PGSIZE, PTE2PA(*child_pte),
+    //                  PTE_FLAGS(*parent_pte)) != 0) {
+    //       return -1;
+    //     }
+    //   }
+    // }
+  }
   return pid;
 }
 
@@ -358,6 +447,13 @@ kexit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // close all mmap
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    struct virtual_memory_area *vma = &p->vma_array_[i];
+    if (!is_vma_free(vma))
+      free_vma(p->pagetable, vma);
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
