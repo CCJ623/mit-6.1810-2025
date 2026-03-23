@@ -457,17 +457,21 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 {
   uint64 mem;
   struct proc *p = myproc();
+  // mmap need this
   struct virtual_memory_area *vma = 0;
 
-  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
-    if (p->vma_array_[i].address_ <= va &&
-        va < p->vma_array_[i].address_ + p->vma_array_[i].length_) {
-      vma = &p->vma_array_[i];
-      break;
+  // determine if va is mmap address
+  if (va >= p->sz) {
+    for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+      if (p->vma_array_[i].address_ <= va &&
+          va < p->vma_array_[i].address_ + p->vma_array_[i].length_) {
+        vma = &p->vma_array_[i];
+        break;
+      }
     }
   }
 
-  if (vma == 0 && va >= p->sz)
+  if (vma == 0)
     return 0;
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
@@ -477,6 +481,7 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   if(mem == 0)
     return 0;
   if (vma) {
+    // mmap
     // read file
     struct inode *inode = vma->file_->ip;
     uint want_bytes = (vma->address_ + vma->length_ - va);
@@ -497,11 +502,13 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     memset((void *)mem + read_bytes, 0, PGSIZE - read_bytes);
 
   } else {
+    // normal
     memset((void *)mem, 0, PGSIZE);
   }
 
   int permission = 0;
   if (vma) {
+    // mmap
     if (vma->protection_ & PROT_READ) {
       permission |= PTE_R;
     }
@@ -513,6 +520,7 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     }
     permission |= PTE_U;
   } else {
+    // normal
     permission |= PTE_W | PTE_U | PTE_R;
   }
   if (mappages(p->pagetable, va, PGSIZE, mem, permission) != 0) {
