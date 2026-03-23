@@ -644,11 +644,19 @@ uint64 sys_munmap(void) {
       vma->offset_ += PGROUNDUP(len);
     }
     vma->length_ -= len;
-
   } else {
     // whole
     fileclose(vma->file_);
     init_vma(vma);
+  }
+
+  process->mmap_start_address_ = TRAPFRAME;
+  for (int i = 0; i < VMA_ARRAY_SIZE; ++i) {
+    struct virtual_memory_area *vma = &process->vma_array_[i];
+    if (is_vma_free(vma))
+      continue;
+    if (vma->address_ < TRAPFRAME)
+      process->mmap_start_address_ = vma->address_;
   }
 
   return 0;
