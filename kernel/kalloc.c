@@ -79,6 +79,8 @@ void kfree(void *pa) {
   release(&kmem.lock);
 }
 
+uint64 kalloc_count = 0;
+
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
@@ -92,6 +94,7 @@ kalloc(void)
   if (r) {
     kmem.freelist = r->next;
     kmem.reference_count[getIndex(r)] = 1;
+    kalloc_count++;
   }
   release(&kmem.lock);
 

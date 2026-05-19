@@ -461,6 +461,8 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   }
 }
 
+uint64 cow_fault_copies = 0;
+
 // allocate and map user memory if process is referencing a page
 // that was lazily allocated in sys_sbrk().
 // returns 0 if va is invalid or already mapped, or if
@@ -508,6 +510,7 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
         return 0;
       memmove((void *)mem, (void *)pa, PGSIZE);
       kfree((void *)pa);
+      cow_fault_copies++;
     }
 
     *pte = PA2PTE(mem) | new_flags;

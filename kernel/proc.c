@@ -328,6 +328,12 @@ kexit(int status)
   if(p == initproc)
     panic("init exiting");
 
+  extern uint64 kalloc_count;
+  extern uint64 cow_fault_copies;
+  if(strncmp(p->name, "cowbench", 8) == 0){
+    printf("cowbench kernel stats: kalloc_count=%d cow_fault_copies=%d\n", (int)kalloc_count, (int)cow_fault_copies);
+  }
+
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
