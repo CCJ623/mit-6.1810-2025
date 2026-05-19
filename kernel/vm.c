@@ -12,6 +12,7 @@
  * the kernel's page table.
  */
 pagetable_t kernel_pagetable;
+uint64 walk_count = 0;
 
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
@@ -95,6 +96,7 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  walk_count++;
   if(va >= MAXVA)
     panic("walk");
 
@@ -130,6 +132,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
 pte_t *superWalk(pagetable_t pagetable, uint64 va, int alloc) {
+  walk_count++;
   if (va >= MAXVA)
     panic("superWalk");
 

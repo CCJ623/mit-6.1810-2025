@@ -45,6 +45,8 @@ sys_sbrk(void)
   uint64 addr;
   int t;
   int n;
+  extern uint64 walk_count;
+  uint64 before = walk_count;
 
   argint(0, &n);
   argint(1, &t);
@@ -61,6 +63,11 @@ sys_sbrk(void)
     if(addr + n < addr)
       return -1;
     myproc()->sz += n;
+  }
+  
+  uint64 after = walk_count;
+  if (after - before > 0) {
+    printf("sbrk kernel walks: %d\n", (int)(after - before));
   }
   return addr;
 }
